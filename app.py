@@ -70,7 +70,7 @@ def forge():
     for m in movies:
         movie = Movie(title=m['title'], year=m['year'])
         db.session.add(movie)
-    db.session.commit() # 提交更改
+    db.session.commit()  # 提交更改
     click.echo('Generate fake data completed!')
 
 
@@ -78,11 +78,29 @@ def forge():
 @app.route('/index')
 @app.route('/home')
 def index():
-    user = User.query.first()  # 读取用户
-    if not user:
-        user.name = 'Blood'
     movies = Movie.query.all()  # 读取所有电影
-    return render_template('index.html', user=user, movies=movies)
+    return render_template('index.html', movies=movies)
+
+
+@app.errorhandler(404)  # 传入要处理的错误代码
+def page_not_found(e):  # 接受异常对象作为参数
+    """Custom 404 Errors page"""
+    response = render_template('404.html')
+    return response, 404  # 返回响应和状态码
+
+
+@app.context_processor
+def inject_vars():  # 函数名可以随意修改
+    """模板上下文处理函数"""
+    user = User.query.first()  # 用户对象
+    if not user:
+        user.name = 'Blood H'
+    return locals()  # 需要返回字典
+
+
+@app.route('/base')
+def base():
+    return render_template('base.html')
 
 
 @app.route('/user/<name>')
