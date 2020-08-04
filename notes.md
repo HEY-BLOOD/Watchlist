@@ -325,3 +325,155 @@ $ git push
 名字以 . 开头的文件默认会被隐藏，执行 ls 命令时会看不到它们，这时你可以使用 `ls *` 命令来列出所有文件。
 
 
+
+## 第 3 章：模板
+
+页面需要在用户访问时根据程序逻辑动态生成。访问一个地址通常会返回一个包含各类信息的 HTML 页面。包含变量和运算逻辑的 HTML 或其他格式的文本叫做模板，这些变量替换和逻辑计算工作的过程被称为渲染，Flask 通过模板渲染引擎——Jinja2 来完成。
+
+按照默认的设置，Flask 会从程序实例所在模块同级目录的 templates 文件夹中寻找模板，所以在程序 `app.py` 的同级目录 (项目根目录) 新建 templates 文件夹：
+
+```powershell
+mkdir directory
+```
+
+### 模板基本语法
+
+在社交网站上，每个人都有一个主页，借助 Jinja2 就可以写出一个通用的模板，例如：
+
+```jinja2
+<h1>{{ username }}的个人主页</h1>
+{% if bio %}
+	<p>{{ bio }}</p> {# 这里的缩进只是为了可读性，不是必须的 #}
+{% else %}
+	<p>自我介绍为空。</p>
+{% endif %} {# 大部分 Jinja 语句都需要声明关闭 #}
+```
+
+Jinja2 的语法和 Python 大致相同，在模板里，需要添加特定的定界符将 Jinja2 语句和变量标记出来。
+
+模板中使用的变量需要在渲染的时候传递进去，下面是三种常用的定界符：
+
+* {{ ... }} 用来标记变量。
+* {% ... %} 用来标记语句，比如 if 语句，for 语句等。
+* {# ... #} 用来写注释。
+
+### 编写主页模板
+
+在 templates 目录下创建一个 index.html 作为主页模板。主页需显示电影条目列表和个人信息，代码如下：
+
+```jinja2
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>{{ name }}'s Watchlist</title>
+</head>
+
+<body>
+    <h2>{{ name }}'s Watchlist</h2>
+    {# 使用 length 过滤器获取 movies 变量的长度 #}
+    <p>{{ movies|length }} Titles</p>
+    <ul>
+        {% for movie in movies %} {# 迭代 movies 变量 #}
+        <li>{{ movie.title }} - {{ movie.year }}</li> {# 等同于 movie['title'] #}
+        {% endfor %} {# 使用 endfor 标签结束 for 语句 #}
+    </ul>
+    <footer>
+        <small>&copy; 2018 <a href="https://github.com/HEY-BLOOD/watchlist">BLOOD's Watchlist</a></small>
+    </footer>
+</body>
+
+</html>
+```
+
+为了方便对变量进行处理，Jinja2 提供了一些过滤器，语法形式如下：
+
+```jinja2
+{{ 变量|过滤器 }}
+```
+
+左侧是变量，右侧是过滤器名。比如 `index.html` 模板中使用 `length` 过滤器来获取 `movies` 的长度，类似 Python 里的 `len()` 函数。
+
+> 提示 访问 http://jinja.pocoo.org/docs/2.10/templates/#list-of-builtin-filters 查看所有可用的过滤器。
+
+### 准备虚拟数据
+
+为了模拟页面渲染，需要先创建一些虚拟数据，用来填充页面内容，在 app.py 中定义：
+
+```python
+name = 'BLOOD'
+movies = [
+{'title': 'My Neighbor Totoro', 'year': '1988'},
+{'title': 'Dead Poets Society', 'year': '1989'},
+{'title': 'A Perfect World', 'year': '1993'},
+{'title': 'Leon', 'year': '1994'},
+{'title': 'Mahjong', 'year': '1996'},
+{'title': 'Swallowtail Butterfly', 'year': '1996'},
+{'title': 'King of Comedy', 'year': '1999'},
+{'title': 'Devils on the Doorstep', 'year': '1999'},
+{'title': 'WALL-E', 'year': '2008'},
+{'title': 'The Pork of Music', 'year': '2012'},
+]
+```
+
+### 渲染主页模板
+
+使用 flask 模块中的 `render_template()` 函数可以把模板渲染出来，必须传入的参数为模板文件名（相对于 templates 根目录的文件路径），这里即 'index.html' 。为了让模板正确渲染，我们还要把模板内部使用的变量通过关键字参数传入这个函数，如下所示：
+app.py：返回渲染好的模板作为响应
+
+```python
+from flask import Flask, render_template
+
+# ...
+
+@app.route('/')
+def index():
+	return render_template('index.html', name=name, movies=movies)
+```
+
+为了更好的表示这个视图函数的作用，我们把原来的函数名 `hello` 改为 `index` ，意思是“索引”，即主页。
+
+这里传入模板的 `name` 是字符串， `movies` 是列表，但能够在模板里使用的不只这两种 Python 数据结构，你也可以传入元组、字典、函数等。
+
+`render_template()` 函数在调用时会识别并执行 index.html 里所有的 Jinja2 语句，返回渲染好的模板内容。
+
+现在访问 http://localhost:5000/ 看到的程序主页如下图所示：
+
+
+<h2>BLOOD's Watchlist</h2>
+<p>10 Titles</p>
+<ul>
+<li>My Neighbor Totoro - 1988</li> 
+<li>Dead Poets Society - 1989</li> 
+<li>A Perfect World - 1993</li> 
+<li>Leon - 1994</li>  
+<li>Mahjong - 1996</li>    
+<li>Swallowtail Butterfly - 1996</li> 
+<li>King of Comedy - 1999</li>
+<li>Devils on the Doorstep - 1999</li> 
+<li>WALL-E - 2008</li> 
+<li>The Pork of Music - 2012</li> 
+</ul>
+<footer>
+    <small>&copy; 2020 <a href="https://github.com/HEY-BLOOD/watchlist">BLOOD's Watchlist</a></small>
+</footer>
+
+### 本章小结
+
+这一章编写了一个简单的主页。结束前，提交代码：
+
+```powershell
+$ git add .
+$ git commit -m "Add index page"
+$ git push
+```
+
+### 进阶提示
+
+使用 [Faker](https://github.com/joke2k/faker) 可以实现自动生成虚拟数据，它支持丰富的数据类型，比如时间、人名、地名、随机字符等等……
+
+除了过滤器，Jinja2 还在模板中提供了一些测试器、全局函数可以使用；以及更丰富的控制结构支持。
+更多内容则可以访问 [Jinja2 文档](https://jinja.palletsprojects.com/en/2.11.x/templates/) 学习。
+
+
