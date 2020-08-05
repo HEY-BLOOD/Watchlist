@@ -2045,3 +2045,630 @@ $ git push
 ### 进阶提示
 
 * 访问 [Flask-Login 文档](https://github.com/maxcountryman/flask-login) 了解更多细节和用法。
+
+
+
+## 第 9 章：测试
+
+在此之前，每次为程序添加了新功能，都要手动在浏览器里访问程序进行测试。除了测试新添加的功能，还要确保旧的功能依然正常工作。在功能复杂的大型程序里，如果每次修改代码或添加新功能后手动测试所有功能，那会产生很大的工作量。另一方面，手动测试并不可靠，重复进行测试操作也很枯燥。基于这些原因，为程序编写自动化测试就变得非常重要。
+
+> 注意 
+>
+> 为了便于介绍，统一在这里介绍关于测试的内容。在实际的项目开发中，应该在开发每一个功能后立刻编写相应的测试，确保测试通过后再开发下一个功能。
+
+### 单元测试
+
+单元测试指对程序中的函数等独立单元编写的测试，它是自动化测试最主要的形式。这一章将使用 Python 标准库中的测试框架 `unittest` 来编写单元测试，通过一个简单的例子了解一些基本概念。
+
+假设 `module_foo.py` 文件中编写了下面这个函数：
+
+```python
+def sayhello(to=None):
+	if to:
+		return 'Hello, %s!' % to
+	return 'Hello!'
+```
+
+`test_sayhello.py` 为这个函数编写的单元测试：
+
+```python
+import unittest
+from module_foo import sayhello
+
+
+class SayHelloTestCase(unittest.TestCase):
+    """测试用例"""
+
+    def setUp(self):
+        """测试固件，每个测试方法执行前被调用"""
+        pass
+
+    def tearDown(self):
+        """测试固件，每个测试方法执行后被调用"""
+        pass
+
+    def test_sayhello(self):  # 第 1 个测试方法
+        rv = sayhello()
+        self.assertEqual(rv, 'Hello!')
+
+    def test_sayhello_to_somebody(self):  # 第 2 个测试方法
+        rv = sayhello(to='Blood')
+        self.assertEqual(rv, 'Hello, Blood!')
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+测试用例继承 `unittest.TestCase` 类，在这个类中创建的以 `test_` 开头的方法将会被视为测试方法。
+
+内容为空的两个方法很特殊，它们是测试固件，用来执行一些特殊操作。比如 `setUp()` 方法会在每个测试方法执行前被调用，而 `tearDown()` 方法则会在每一个测试方法执行后被调用（注意这两个方法名称的大小写）。
+
+如果把执行测试方法比作战斗， `setUp()` 就是准备弹药、规划战术的工作，`tearDown()` 则是打扫战场。
+
+每一个测试方法（以 `test_` 开头的）对应一个要测试的函数/功能/使用场景。上面创建了两个测试方法，`test_sayhello()` 方法测试 `sayhello()` 函数，`test_sayhello_to_somebody()` 方法测试传入参数时的 `sayhello()` 函数。
+
+在测试方法里，使用断言方法来判断程序功能是否正常。以第一个测试方法为例，先把 `sayhello()` 函数调用的返回值保存为 `rv` 变量，然后使用 `self.assertEqual(rv, 'Hello!')` 来判断返回值内容是否符合预期。如果断言方法出错，就表示该测试方法未通过。
+
+常用的断言方法：
+
+- assertEqual(a, b)
+- assertNotEqual(a, b)
+- assertTrue(x)
+- assertFalse(x)
+- assertIs(a, b)
+- assertIsNot(a, b)
+- assertIsNone(x)
+- assertIsNotNone(x)
+- assertIn(a, b)
+- assertNotIn(a, b)
+
+这些方法的作用从方法名称上基本可以得知。
+
+执行 `python test_sayhello.py` 执行所有测试，并输出测试的结果、通过情况、总耗时等信息。
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> python.exe .\test_sayhello.py
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+```
+
+单元测试通过，并无发生异常。现在将第 22 行的 `'Blood'` 更改为 `'abc'` (不同的字符串) 后再次测试：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> python.exe .\test_sayhello.py
+.F
+======================================================================
+FAIL: test_sayhello_to_somebody (__main__.SayHelloTestCase)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File ".\test_sayhello.py", line 22, in test_sayhello_to_somebody
+    self.assertEqual(rv, 'Hello, Blood!')
+AssertionError: 'Hello, abc!' != 'Hello, Blood!'
+- Hello, abc!
++ Hello, Blood!
+
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.002s
+
+FAILED (failures=1)
+```
+
+结果显示第 22 行所在的 `test_sayhello_to_somebody` 测试函数发生了异常，测试结果 `'Hello, abc!'` 与预期的结果 `'Hello, Blood!'` 不一样。
+
+### 测试 Flask 程序
+
+在项目根目录创建一个 test_watchlist.py 脚本来存储测试代码，先编写测试固件和两个简单的基础测试：
+test_watchlist.py：测试固件
+
+```python
+import unittest
+from app import app, db, User, Movie
+
+
+class WatchlistTestCase(unittest.TestCase):
+    """ watchlist 程序测试"""
+
+    def setUp(self):
+        # 更新配置
+        app.config.update(
+            TESTING=True,  # 开启测试模式，在出错时不会输出多余信息
+            SQLALCHEMY_DATABASE_URI='sqlite:///:memory:'  # 使用 SQLite 内存型数据库
+        )
+        # 创建数据库和表
+        db.create_all()
+        # 创建测试数据，一个用户，一个电影条目
+        user = User(name='TestName', username='TestUsername')
+        user.set_password('TestPassword')
+        movie = Movie(title='Test Movie Title', year='2019')
+        # 使用 add_all() 方法一次添加多个模型类实例，传入列表
+        db.session.add_all([user, movie])
+        db.session.commit()
+        self.client = app.test_client()  # 创建测试客户端
+        self.runner = app.test_cli_runner()  # 创建测试命令运行器
+
+    def tearDown(self):
+        db.session.remove()  # 清除数据库会话
+        db.drop_all()  # 删除数据库表
+        
+    def test_app_exist(self):
+        """ 测试程序实例是否存在 """
+        self.assertIsNotNone(app)
+        
+    def test_app_is_testing(self):
+        """ 测试程序是否处于测试模式 """
+        self.assertTrue(app.config['TESTING'])
+```
+
+某些配置，在开发和测试时通常需要使用不同的值。在 `setUp()` 方法中，更新了两个配置变量的值，首先将 `TESTING` 设为 `True` 来开启测试模式，这样在出错时不会输出多余信息；然后将 `SQLALCHEMY_DATABASE_URI` 设为 `'sqlite:///:memory:'`，这会使用 SQLite 内存型数据库，不会干扰开发时使用的数据库文件。你也可以使用不同文件名的 SQLite 数据库文件，但内存型数据库速度更快。
+
+接着，调用 `db.create_all()` 创建数据库和表，然后添加测试数据到数据库。在 `setUp()` 方法最后创建的两个类属性分别为测试客户端和测试命令运行器，前者用来模拟客户端请求，后者用来触发自定义命令，之后介绍。
+
+在 `tearDown()` 方法中，调用 `db.session.remove()` 清除数据库会话并调用 `db.drop_all()` 删除数据库表。测试时的程序状态和真实的程序运行状态不同，所以调用 `db.session.remove()` 来确保数据库会话被清除。
+
+#### 测试客户端
+
+`app.test_client()` 返回一个测试客户端对象，可以用来模拟客户端（浏览器），创建类属性 `self.client` 来保存它。对它调用 get() 方法就相当于浏览器向服务器发送 GET 请求，调用 post() 则相当于浏览器向服务器发送
+POST 请求，以此类推。下面是两个发送 GET 请求的测试方法，分别测试 404 页面和主页：
+
+test_watchlist.py：测试固件
+
+```python
+import unittest
+from app import app, db, User, Movie
+
+
+class WatchlistTestCase(unittest.TestCase):
+    """ watchlist 程序测试"""
+    # ......
+
+    def test_404_page(self):
+        """ Page not fount Test Function """
+        response = self.client.get('/nothing')  # Get 方法访问 URL 路由
+        data = response.get_data(as_text=True)  # 获取 Unicode 格式的响应主体
+        self.assertIn('Page Not Found - 404', data)  # 判断是否包含预期值
+        self.assertIn('Go Home', data)
+        self.assertEqual(response.status_code, 404)  # 判断响应状态码
+
+    def test_index_page(self):
+        """ Home page Test Function """
+        response = self.client.get('/')  # Get 方法访问 '/' 路由
+        data = response.get_data(as_text=True)
+        self.assertIn('TestName\'s Watchlist', data)
+        self.assertIn('Test Movie Title', data)
+        self.assertEqual(response.status_code, 200)
+
+```
+
+调用这类方法返回包含响应数据的响应对象，对这个响应对象调用 `get_data()` 方法并把 `as_text` 参数设为 `True` 可以获取 `Unicode` 格式的响应主体。通过判断响应主体中是否包含预期的内容来测试程序是否正常工作，比如 404 页面响应是否包含 `Go Home`，主页响应是否包含标题 `Test Name's Watchlist`。
+
+接下来测试数据库操作相关的功能，比如创建、更新和删除电影条目。这些操作对应的请求都需要登录账户后才能发送，先编写一个用于登录账户的辅助方法 `login()`：
+
+非 `test_` 开头的方法，不会自动的被调用
+
+```python
+class WatchlistTestCase(unittest.TestCase):
+    """ watchlist 程序测试"""
+    # ......
+    
+    def login(self):
+    """ 辅助方法，用于登入用户 """
+    self.client.post('/login', data=dict(  # Post 方法，发送请求，登录账户
+        username='TestUsername',
+        password='TestPassword'
+    ), follow_redirects=True)  # 跟随重定向
+```
+
+在 `login()` 方法中，使用 `post()` 方法发送提交登录表单的 POST 请求。和 `get()` 方法类似，需要先传入目标 URL，然后使用 `data` 关键字以字典的形式传入请求数据（字典中的键为表单 `<input>` 元素的 `name` 属性
+值），作为登录表单的输入数据；而将 `follow_redirects` 参数设为 `True` 可以跟随重定向，最终返回的会是重定向后的响应。
+
+test_watchlist.py：测试创建、更新和删除条目的方法
+
+```python
+class WatchlistTestCase(unittest.TestCase):
+    """ watchlist 程序测试"""
+    # ......
+    
+    def test_add_item(self):
+        ''' 测试创建条目 '''
+        self.login()  # 首先在客户端登录用户
+
+        # 测试创建条目操作
+        response = self.client.post(
+            '/', data=dict(title='New Movie', year='2019'), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn('Item created.', data)  # 创建成功提示
+        self.assertIn('New Movie', data)  # 新条目的名称
+
+        # 测试创建条目操作，电影标题 title 为空
+        response = self.client.post(
+            '/', data=dict(title='', year='2019'), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Item created.', data)  # 没有创建成功提示
+        self.assertIn('Invalid input.', data)  # 输入不合法
+
+        # 测试创建条目操作，电影年份 year 为空
+        response = self.client.post(
+            '/', data=dict(title='New Movie', year=''), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Item created.', data)  # 没有创建成功提示
+        self.assertIn('Invalid input.', data)  # 输入不合法
+
+    def test_update_item(self):
+        """ 测试更新条目 """
+        self.login()  # 首先在客户端登录用户
+
+        # 测试更新条目页面
+        response = self.client.get('/movie/edit/1')
+        data = response.get_data(as_text=True)
+        self.assertIn('Test Movie Title', data)
+        self.assertIn('2019', data)
+
+        # 测试更新条目操作
+        response = self.client.post(
+            '/movie/edit/1', data=dict(title='New Movie Edited', year='2019'), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn('Item updated.', data)
+        self.assertNotIn('Invalid input.', data)
+
+        # 测试更新条目操作，电影标题 title 为空
+        response = self.client.post(
+            '/movie/edit/1', data=dict(title='', year='2019'), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Item updated.', data)
+        self.assertIn('Invalid input.', data)
+        self.assertNotIn('Test Movie Title', data)  # 显示条目 1 的原标题
+
+        # 测试更新条目操作，电影年份 year 为空
+        response = self.client.post(
+            '/movie/edit/1', data=dict(title='New Movie Edited Again', year=''), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Item updated.', data)
+        self.assertIn('Invalid input.', data)
+        self.assertNotIn('Test Movie Title', data)  # 显示条目 1 的原标题
+        self.assertNotIn('New Movie Edited Again', data)
+
+    def test_delete_item(self):
+        """ 测试删除条目 """
+        self.login()  # 首先在客户端登录用户
+
+        # 测试删除条目
+        response = self.client.post('/movie/delete/1', follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn('Item deleted.', data)
+        self.assertNotIn('Test Movie Title', data)
+```
+
+在这几个测试方法中，大部分的断言都是在判断响应主体是否包含正确的提示消息和电影条目信息。
+
+test_watchlist.py：测试认证相关功能 (登录、登出和认证保护等功能)
+
+```python
+class WatchlistTestCase(unittest.TestCase):
+    """ watchlist 程序测试"""
+    # ......
+    
+    def test_login_protect(self):
+        """ 测试登录保护 """
+        response = self.client.get('/')
+        data = response.get_data(as_text=True)
+        self.assertIn('Login', data)
+        self.assertNotIn('Edit', data)
+        self.assertNotIn('Delete', data)
+        self.assertNotIn('Settings', data)
+        self.assertNotIn('Logout', data)
+        self.assertNotIn('<form method="post">', data)
+
+    def test_login(self):
+        """ 测试用户登录 """
+
+        # 测试登录
+        response = self.client.post(
+            '/login', data=dict(username='TestUsername', password='TestPassword'), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn('TestName', data)
+        self.assertIn('Edit', data)
+        self.assertIn('Delete', data)
+        self.assertIn('Settings', data)
+        self.assertIn('Logout', data)
+        self.assertIn('Login success.', data)  # 已经有 Login 字符串
+        self.assertNotIn('<a href="/login">Login</a>', data)  # Login 超链接
+        self.assertNotIn('Invalid input.', data)
+        self.assertNotIn('Invalid username or password.', data)
+        self.client.get('/logout')  # 退出登录
+
+        # 测试使用错误的密码登录
+        response = self.client.post(
+            '/login', data=dict(username='TestUsername', password='TestInvalidPassword'), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Edit', data)
+        self.assertNotIn('Delete', data)
+        self.assertNotIn('Settings', data)
+        self.assertNotIn('Logout', data)
+        self.assertNotIn('Login success.', data)
+        self.assertNotIn('Invalid input.', data)
+        self.assertIn('<h3>Login</h3>', data)
+        self.assertIn('TestName', data)
+        self.assertIn('<h3>Login</h3>', data)
+        self.assertIn('Invalid username or password.', data)
+
+        # 测试使用错误的用户名登录
+        response = self.client.post(
+            '/login', data=dict(username='TestInvalidUsername', password='TestPassword'), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Edit', data)
+        self.assertNotIn('Delete', data)
+        self.assertNotIn('Settings', data)
+        self.assertNotIn('Logout', data)
+        self.assertNotIn('Login success.', data)
+        self.assertNotIn('Invalid input.', data)
+        self.assertIn('<h3>Login</h3>', data)
+        self.assertIn('TestName', data)
+        self.assertIn('Login', data)
+        self.assertIn('Invalid username or password.', data)
+
+        # 测试使用错误的密码和错误的用户名登录
+        response = self.client.post(
+            '/login', data=dict(username='TestInvalidUsername', password='TestInvalidPassword'), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Edit', data)
+        self.assertNotIn('Delete', data)
+        self.assertNotIn('Settings', data)
+        self.assertNotIn('Logout', data)
+        self.assertNotIn('Login success.', data)
+        self.assertNotIn('Invalid input.', data)
+        self.assertIn('<h3>Login</h3>', data)
+        self.assertIn('TestName', data)
+        self.assertIn('Login', data)
+        self.assertIn('Invalid username or password.', data)
+
+        # 测试使用空密码登录
+        response = self.client.post(
+            '/login', data=dict(username='TestUsername', password=''), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Edit', data)
+        self.assertNotIn('Delete', data)
+        self.assertNotIn('Settings', data)
+        self.assertNotIn('Logout', data)
+        self.assertNotIn('Login success.', data)
+        self.assertNotIn('Invalid username or password.', data)
+        self.assertIn('Invalid input.', data)
+        self.assertIn('TestName', data)
+        self.assertIn('Login', data)
+        self.assertIn('<h3>Login</h3>', data)
+
+        # 测试使用空用户名登录
+        response = self.client.post(
+            '/login', data=dict(username='TestUsername', password=''), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Edit', data)
+        self.assertNotIn('Delete', data)
+        self.assertNotIn('Settings', data)
+        self.assertNotIn('Logout', data)
+        self.assertNotIn('Login success.', data)
+        self.assertNotIn('Invalid username or password.', data)
+        self.assertIn('Invalid input.', data)
+        self.assertIn('TestName', data)
+        self.assertIn('Login', data)
+        self.assertIn('<h3>Login</h3>', data)
+
+        # 测试使用空密码和空用户名登录
+        response = self.client.post(
+            '/login', data=dict(username='TestUsername', password=''), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotIn('Edit', data)
+        self.assertNotIn('Delete', data)
+        self.assertNotIn('Settings', data)
+        self.assertNotIn('Logout', data)
+        self.assertNotIn('Login success.', data)
+        self.assertNotIn('Invalid username or password.', data)
+        self.assertIn('Invalid input.', data)
+        self.assertIn('TestName', data)
+        self.assertIn('Login', data)
+        self.assertIn('<h3>Login</h3>', data)
+
+    def test_logout(self):
+        """ 测试登出 """
+        self.login()  # 首先在客户端登录用户
+
+        response = self.client.get('/logout', follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn('Goodbye.', data)
+        self.assertIn('Login', data)
+        self.assertNotIn('Edit', data)
+        self.assertNotIn('Delete', data)
+        self.assertNotIn('Settings', data)
+        self.assertNotIn('Logout', data)
+        self.assertNotIn('<form method="post">', data)
+        self.assertNotIn('<h3>Login</h3>', data)
+
+    def test_settings(self):
+        """ 测试设置 """
+        self.login()  # 首先在客户端登录用户
+
+        # 测试设置页面
+        response = self.client.get('/settings', follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn('<h3>Settings</h3>', data)
+        self.assertIn('Your Name', data)
+
+        # 测试更新设置
+        response = self.client.post('/settings', data=dict(
+            name='Blood Wong',
+        ), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn('Updated name.', data)
+        self.assertIn('Blood Wong', data)
+
+        # 测试更新设置，姓名为空
+        response = self.client.post('/settings', data=dict(
+            name='',
+        ), follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn('Blood Wong', data)  # 上面更新成功后的名称
+        self.assertIn('Invalid input.', data)
+        self.assertNotIn('Updated name.', data)
+```
+
+#### 测试命令
+
+除了测试程序的各个视图函数，还需要测试自定义命令。 `app.test_cli_runner()` 方法返回一个命令运行器对象，创建类属性 `self.runner` 来保存它。通过对它调用 `invoke()` 方法可以执行命令，传入命令函数对象，或是使用 `args` 关键字直接给出命令参数列表。 `invoke()` 方法返回的命令执行结果对象，它的 `output` 属性返回命令的输出信息。首先在 `setUp()` 测试固件中添加以下代码：
+
+```python
+def setUp(self):
+    # …………
+    self.runner = app.test_cli_runner()  # 创建测试命令运行器
+```
+
+下面是为各个自定义命令编写的测试方法：
+
+test_watchlist.py：测试自定义命令行命令
+
+```python
+from app import app, db, Movie, User, forge, initdb  # 导入命令函数
+
+class WatchlistTestCase(unittest.TestCase):
+    """ watchlist 程序测试"""
+	# …………
+
+    def test_forge_command(self):
+        """ 测试 forge 命令，创建虚拟数据 """
+        result = self.runner.invoke(forge)  # 在控制台执行 forge 命令
+        self.assertIn('Generate fake data completed!',
+                      result.output)  # 比较执行命令后的输出
+
+    def test_initdb_command(self):
+        """ 测试 initdb 命令，初始化数据库 """
+
+        # 初始化数据库，无参数
+        result = self.runner.invoke(initdb)
+        self.assertIn('Initialized database.', result.output)
+
+        # 初始化数据库，参数 --drop
+        result = self.runner.invoke(args=['initdb', '--drop'])
+        self.assertIn('Initialized database.', result.output)
+
+    def test_admin_command(self):
+        """ 测试 admin 命令，生成管理员用户 """
+
+        # 没有创建过管理员用户
+        self.runner.invoke(args=['initdb', '--drop'])  # 初始化数据库，删除 setUp中创建的用户
+        result = self.runner.invoke(
+            args=['admin', '--username', 'admin_username', '--password', 'admin_password'])
+        self.assertIn('Creating user...', result.output)
+        self.assertIn('Completed.', result.output)
+        self.assertEqual(User.query.count(), 1)  # 唯一的管理员用户
+        self.assertEqual(User.query.first().username, 'admin_username')
+        self.assertTrue(User.query.first().validate_password('admin_password'))
+
+        # 已经创建过管理员用户
+        result = self.runner.invoke(
+            args=['admin', '--username', 'admin_username_again', '--password', 'admin_password_again'])
+        self.assertIn('Updating user...', result.output)
+        self.assertIn('Completed.', result.output)
+        self.assertEqual(User.query.count(), 1)  # 唯一的管理员用户
+        self.assertEqual(User.query.first().username, 'admin_username_again')
+        self.assertTrue(User.query.first().validate_password(
+            'admin_password_again'))
+
+    def test_admin_command_update(self):
+        """ 测试更新管理员账户 """
+        # 使用 args 参数给出完整的命令参数列表
+        result = self.runner.invoke(args=['admin', '--username',
+                                          'peter', '--password', 'updated_password'])
+        self.assertIn('Updating user...', result.output)
+        self.assertIn('Completed.', result.output)
+        self.assertEqual(User.query.count(), 1)
+        self.assertEqual(User.query.first().username, 'peter')
+        self.assertTrue(
+            User.query.first().validate_password('updated_password'))
+```
+
+在这几个测试中，大部分的断言是在检查执行命令后的数据库数据是否发生了正确的变化，或是判断命令行输出（ `result.output` ）的内容是否包含预期的字符。
+
+### 运行测试
+
+最后，在程序结尾添加下面的代码：
+
+```python
+if __name__ == "__main__":
+    unittest.main()
+```
+
+在命令行下执行测试：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> python.exe .\test_watchlist.py
+.............False
+..
+----------------------------------------------------------------------
+Ran 15 tests in 3.028s
+
+OK
+```
+
+如果测试出错，控制台会输出会看到详细的错误信息，就像之前的 `test_sayhello_to_somebody（）` 测试函数一样，进而可以有针对性的修复对应的程序代码，或是调整测试方法。
+
+### 测试覆盖率
+
+为了让程序更加强壮，可以添加更多、更完善的测试。那么，如何才能知道程序里有哪些代码还没有被测试？整体的测试覆盖率情况如何？我们可以使用 [Coverage.py](https://coverage.readthedocs.io/en/latest/) 来检查测试覆盖率，首先安装它：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> pip install coverage
+# …………
+Successfully installed coverage-5.2.1
+```
+
+使用下面的命令执行测试并检查测试覆盖率：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> coverage run --source=app .\test_watchlist.py
+.............False
+..
+----------------------------------------------------------------------
+Ran 15 tests in 3.538s
+
+OK
+```
+
+因为只需要检查程序脚本 app.py 的测试覆盖率，所以使用 `--source=app` 选项来指定要检查的模块或包。
+
+最后使用下面的命令查看覆盖率报告：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> coverage report
+Name     Stmts   Miss  Cover
+----------------------------
+app.py     146      4    97%
+```
+
+从表格可以看出，一共有 157 行代码，没测试到的代码有 12 行，测试覆盖率为 92%。
+
+还可以使用 `coverage html` 命令获取详细的 HTML 格式的覆盖率报告，它会在当前目录生成一个 htmlcov 文件夹，打开其中的 `index.html` 即可查看覆盖率报告。
+
+同时在 `.gitignore` 文件后追加下面两行，忽略掉生成的覆盖率报告文件：
+
+```
+htmlcov/
+.coverage
+```
+
+### 本章小结
+
+通过测试后，我们就可以准备上线程序了。结束前，提交代码：
+
+```powershell
+$ git add .
+$ git commit -m "Add unit test with unittest"
+$ git push
+```
+
+### 进阶提示
+
+* 访问 Coverage.py 文档（https://coverage.readthedocs.io）或执行 `coverage help` 命令来查看更多用法。
+* 使用标准库中的 `unittest` 编写单元测试不是唯一选择，也可以使用第三方测试框架，比如 [pytest](https://pytest.org/) 。
+
