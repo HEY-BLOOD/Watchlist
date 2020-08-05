@@ -2015,7 +2015,6 @@ base.html ：登录登出模板内容保护
 现在的程序中，登录与未登录的可用功能如下：
 
 <center><strong>已登录账号功能介绍</strong></center>
-
 |      功能       |                     说明                     |
 | :-------------: | :------------------------------------------: |
 |   index 首页    | 显示 Movie 条目列表（Watchlist），index.html |
@@ -2026,7 +2025,6 @@ base.html ：登录登出模板内容保护
 | delete 删除条目 |     删除已存在的 Movie 条目，delete.html     |
 
 <center><strong>未登录账号功能介绍</strong></center>
-
 |    功能    |                     说明                     |
 | :--------: | :------------------------------------------: |
 | index 首页 | 显示 Movie 条目列表（Watchlist），index.html |
@@ -2671,4 +2669,467 @@ $ git push
 
 * 访问 Coverage.py 文档（https://coverage.readthedocs.io）或执行 `coverage help` 命令来查看更多用法。
 * 使用标准库中的 `unittest` 编写单元测试不是唯一选择，也可以使用第三方测试框架，比如 [pytest](https://pytest.org/) 。
+
+
+
+## 第 10 章：组织你的代码
+
+虽然程序开发已经完成，但随着功能的增多，把所有代码放在 app.py 里会让后续的开发和维护变得麻烦。这一章，对项目代码进行一次重构，让项目组织变得更加合理。
+
+Flask 对项目结构没有固定要求，可以使用单脚本，也可以使用包。这一章通过使用包来组织程序。
+先来看看目前的项目文件结构：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> tree /F
+卷 作业 的文件夹 E:\PyCode\watchlist\ 列表
+卷序列号为 2D97-AD94
+│  .flaskenv
+│  .gitignore
+│  app.py
+│  test_watchlist.py
+├─static
+│  │  favicon.ico
+│  │  style.css
+│  │
+│  └─images
+│          avatar.png
+│          totoro.gif
+└─templates
+       404.html
+       base.html
+       edit.html
+       index.html
+       login.html
+       settings.html
+```
+
+### 使用包组织代码
+
+先在项目根目录创建一个 `watchlist` 文件夹作为包 (项目根目录可能也叫 `watchlist`，这并不冲突，到后面就会理解了)：
+
+```powershell
+mkdir watchlist
+```
+
+把 `static` 静态文件夹和 `templates` 模板文件夹移动到 `watchlist` 包文件夹中：
+
+```powershell
+watchlist
+│
+├─static
+└─templates
+```
+
+把 app.py 中的代码按照类别分别放到多个模块，并把模块都放到包里，各模块和作用如下表所示：
+
+|     模块      |           作业           |
+| :-----------: | :----------------------: |
+| `__init__.py` | 包构造文件，创建程序实例 |
+|   views.py    |         视图函数         |
+|   errors.py   |       错误处理函数       |
+|   models.py   |          模型类          |
+|  commands.py  |         命令函数         |
+
+> 提示 除了包构造文件外，其他的模块文件名可以自由修改，比如 views.py 也可以叫 routes.py。
+
+创建程序实例，初始化扩展的代码放到包构造文件里（`__init__.py`），如下所示：
+
+```python
+# -*- coding: utf-8 -*-
+import os
+import sys
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager
+
+WIN = sys.platform.startswith('win')
+if WIN:  # Windows 环境下，三个斜杠
+    prefix = 'sqlite:///'
+else:
+    prefix = 'sqlite:////'
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'dev'  # 等同于 app.secret_key = 'dev'
+
+# 把 app.root_path 添加到 os.path.dirname() 中，以便把文件定位到项目根目录
+app.config['SQLALCHEMY_DATABASE_URI'] = prefix + \
+    os.path.join(os.path.dirname(app.root_path), 'data.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # 关闭对模型的修改监控
+
+# 在扩展类实例化前加载配置
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)  # 实例化扩展类
+
+
+@login_manager.user_loader
+def load_user(user_id):  # 创建用户加载回调函数，接受用户 ID 作为参数
+    from watchlist.models import User
+    user = User.query.get(int(user_id))  # 用 ID 作为 User 模型的主键查询对应的用户
+    return user  # 返回用户对象
+
+
+login_manager.login_view = 'login'  # 重定向登录页面
+login_manager.login_massage = 'You are not currently logged in, please log in your account first'  # 重定向登录页面提示
+
+
+@app.context_processor
+def inject_vars():  # 函数名可以随意修改
+    """模板上下文处理函数"""
+    from watchlist.models import User
+    user = User.query.first()  # 用户对象
+    if not user:
+        user.name = 'Blood H'
+    return locals()  # 需要返回字典
+
+
+from watchlist import views, errors, commands
+```
+
+在构造文件中，为了让视图函数、错误处理函数和命令函数注册到程序实例上，需要在这里导入这几个模块。但是因为这几个模块同时也要导入构造文件中的程序实例，为了避免循环依赖（A 导入 B，B 导入 A），把这一行导入语句放到构造文件的结尾。同样的， `load_user()` 函数和 `inject_user()` 函数中使用的模型类也在函数内进行导入。
+
+其他代码则按照分类分别放到各自的模块中，在移动代码之后，注意添加并更新导入语句，比如使用下面的导入语句来导入程序实例和扩展对象：
+
+views.py：视图函数模块
+
+```python
+# -*- coding: utf-8 -*-
+from flask.templating import render_template
+from watchlist import app, db, login_manager
+from flask import render_template, redirect, request, flash, url_for,
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from watchlist.models import User, Movie
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if not username or not password:
+            flash('Invalid input.')
+            return redirect(url_for('login'))
+        user = User.query.first()
+        # 验证用户名和密码是否一致
+        if username == user.username and user.validate_password(password):
+            login_user(user)  # 登入用户
+            flash('Login success.')
+            return redirect(url_for('index'))  # 重定向到主页
+        flash('Invalid username or password.')  # 如果验证失败，显示错误消息
+        return redirect(url_for('login'))  # 重定向回登录页面
+    return render_template('login.html')
+
+
+@app.route('/logout')
+@login_required  # 用于视图保护，
+def logout():
+    """登出用户"""
+    logout_user()  # 登出用户
+    flash('Goodbye.')
+    return redirect(url_for('index'))  # 重定向回首页
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required  # 视图保护
+def settings():
+    if request.method == 'POST':
+        name = request.form['name']
+        if not name or len(name) > 20:
+            flash('Invalid input.')
+            return redirect(url_for('settings'))
+        current_user.name = name
+        print(current_user is User.query.first())
+        # current_user 会返回当前登录用户的数据库记录对象
+        # 等同于下面的用法
+        # user = User.query.first()
+        # user.name = name
+        User.query.first().name = current_user.name
+        db.session.commit()
+        flash('Updated name.')
+        # return redirect(url_for('index'))  # 重定向到首页
+    return render_template('settings.html')
+
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':  # 判断是否是 POST 请求
+        # 添加新条目，用户保护
+        if not current_user.is_authenticated:  # 如果当前用户未认证
+            flash(login_manager.login_massage)  # 传入登录提示
+            return redirect(url_for('login'))  # 重定向到登录页面
+        # 获取表单数据
+        title = request.form.get('title')  # 传入表单对应输入字段的 name 值
+        year = request.form.get('year')
+        # 验证数据
+        if not title or not year or len(year) > 4 or len(title) > 60:
+            flash('Invalid input.')  # 显示错误提示
+            return redirect(url_for('index'))  # 重定向回主页
+        # 保存表单数据到数据库
+        movie = Movie(title=title, year=year)  # 创建记录
+        db.session.add(movie)  # 添加到数据库会话
+        db.session.commit()  # 提交数据库会话
+        flash('Item created.')  # 显示成功创建的提示
+        return redirect(url_for('index'))  # 重定向回主页
+    movies = Movie.query.all()
+    return render_template('index.html',  movies=movies)
+
+
+@app.route('/movie/edit/<int:movie_id>', methods=['GET', 'POST'])
+@login_required  # 登录保护
+def edit(movie_id):
+    movie = Movie.query.get_or_404(movie_id)
+    if request.method == 'POST':  # 处理编辑表单的提交请求
+        title = request.form['title']
+        year = request.form['year']
+        if not title or not year or len(year) > 4 or len(title) > 60:
+            flash('Invalid input.')
+            return redirect(url_for('edit', movie_id=movie_id))  # 重定向回对应的编辑页面
+        movie.title = title  # 更新标题
+        movie.year = year  # 更新年份
+        db.session.commit()  # 提交数据库会话
+        flash('Item updated.')
+        return redirect(url_for('index'))  # 重定向回主页
+    return render_template('edit.html', movie=movie)  # 传入被编辑的电影记录
+
+
+@app.route('/movie/delete/<int:movie_id>', methods=['POST'])  # 限定只接受 POST 请求
+@login_required  # 登录保护
+def delete(movie_id):
+    movie = Movie.query.get_or_404(movie_id)  # 获取电影记录
+    db.session.delete(movie)  # 删除对应的记录
+    db.session.commit()  # 提交数据库会话
+    flash('Item deleted.')
+    return redirect(url_for('index'))  # 重定向回主页
+```
+
+errors.py：错误处理模块
+
+```python
+# -*- coding: utf-8 -*-
+from watchlist import app
+from flask import render_template
+
+@app.errorhandler(404)  # 传入要处理的错误代码
+def page_not_found(e):  # 接受异常对象作为参数
+    """Custom 404 Errors page"""
+    response = render_template('404.html')
+    return response, 404  # 返回响应和状态码
+```
+
+models.py：数据模型模块
+
+```python
+# -*- coding: utf-8 -*-
+from watchlist import db
+from flask_login import UserMixin
+from werkzeug.security import generate_password_hash, check_password_hash
+
+
+class User(db.Model, UserMixin):  # 表名将会是 user（自动生成，小写处理）
+    id = db.Column(db.Integer, primary_key=True)  # 主键
+    name = db.Column(db.String(20))
+    username = db.Column(db.String(20))  # 用户名
+    password_hash = db.Column(db.String(128))  # 密码散列值
+
+    def set_password(self, password):  # 用来设置密码的方法，接受密码作为参数
+        self.password_hash = generate_password_hash(password)  # 将生成的密码保持到对应字段
+
+    def validate_password(self, password):  # 用于验证密码的方法，接受密码作为参数
+        return check_password_hash(self.password_hash, password)  # 返回布尔值
+
+
+class Movie(db.Model):  # 表名 movie
+    id = db.Column(db.Integer, primary_key=True)  # 主键
+    title = db.Column(db.String(60))  # 电影标题
+    year = db.Column(db.String(4))  # 电影年份
+```
+
+commands.py：命令函数模块
+
+```python
+# -*- coding: utf-8 -*-
+import click
+from watchlist import app, db
+from watchlist.models import User, Movie
+
+@app.cli.command()  # 注册为命令
+@click.option('--drop', is_flag=True, help='Create after drop.')  # 设置选项
+def initdb(drop):
+    """Initialize the database"""
+    if drop:
+        db.drop_all()  # 删除数据表
+    db.create_all()  # 创建数据表
+    click.echo('Initialized database.')  # 输出提示信息
+
+
+@app.cli.command()
+def forge():
+    """Generate fake data."""
+    db.create_all()  # 创建数据表
+
+    # 虚拟电影条目数据
+    movies = [
+        {'title': 'My Neighbor Totoro', 'year': '1988'},
+        {'title': 'Dead Poets Society', 'year': '1989'},
+        {'title': 'A Perfect World', 'year': '1993'},
+        {'title': 'Leon', 'year': '1994'},
+        {'title': 'Mahjong', 'year': '1996'},
+        {'title': 'Swallowtail Butterfly', 'year': '1996'},
+        {'title': 'King of Comedy', 'year': '1999'},
+        {'title': 'Devils on the Doorstep', 'year': '1999'},
+        {'title': 'WALL-E', 'year': '2008'},
+        {'title': 'The Pork of Music', 'year': '2012'},
+    ]
+    for m in movies:
+        movie = Movie(title=m['title'], year=m['year'])
+        db.session.add(movie)
+    db.session.commit()  # 提交更改
+    click.echo('Generate fake data completed!')
+
+
+@app.cli.command()
+@click.option('--username', prompt=True, help='The username used to login.')
+@click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True, help='The password used to login.')
+def admin(username, password):
+    """Create user."""
+    db.create_all()
+    user = User.query.first()
+    if user is not None:
+        click.echo('Updating user...')
+        user.username = username
+        user.set_password(password)  # 设置密码
+    else:
+        click.echo('Creating user...')
+        user = User(username=username, name='Blood Wong')
+        user.set_password(password)  # 设置密码
+    db.session.add(user)
+    db.session.commit()  # 提交数据库会话
+    click.echo('Completed.')
+```
+
+### 组织模板
+
+模块文件夹 templates 下包含了多个模板文件，我们可以创建子文件夹来更好的组织它们。下面的操作创建了一个 errors 子文件夹，并把错误页面模板都移动到这个 errors 文件夹内（这些操作也可以使用文件管理器或编辑器完成）：
+
+```powershell
+$ cd templates # 切换到 templates 目录
+$ mkdir errors # 创建 errors 文件夹
+$ mv 404.html errors
+```
+
+因为错误页面放到了新的路径，所以需要修改错误处理函数中的模板文件路径，比如：
+
+```python
+@app.errorhandler(404)  # 传入要处理的错误代码
+def page_not_found(e):  # 接受异常对象作为参数
+    """Custom 404 Errors page"""
+    response = render_template('errors/404.html')
+    return response, 404  # 返回响应和状态码
+```
+
+### 单元测试
+
+也可以将测试文件拆分成多个模块，创建一个 tests 包来存储这些模块。但是因为目前的测试代码还比较少，所以暂时不做改动，只需要更新导入语句即可：
+
+```python
+from watchlist import app, db
+from watchlist.models import User, Movie
+from watchlist.commands import initdb, forge
+```
+
+因为要测试的目标改变，测试时的 `--source` 选项的值也要更新为包的名称 `watchlist` ：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> coverage run --source=watchlist test_watchlist.py
+.............False
+..
+----------------------------------------------------------------------
+Ran 15 tests in 3.896s
+
+OK
+```
+
+> **提示：**可以创建配置文件来预先定义 `--source` 选项，避免每次执行命令都给出这个选项，具体可参考文档[配置文件章节](https://coverage.readthedocs.io/en/coverage-5.2.1/config.html)。
+
+现在的测试覆盖率报告会显示包内的多个文件的覆盖率情况：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> coverage.exe report
+Name                    Stmts   Miss  Cover
+-------------------------------------------
+watchlist\__init__.py      28      2    93%
+watchlist\commands.py      32      0   100%
+watchlist\errors.py         5      0   100%
+watchlist\models.py        16      0   100%
+watchlist\views.py         76      2    97%
+-------------------------------------------
+TOTAL                     157      4    97%
+```
+
+### 启动程序
+
+因为现在使用包来组织程序，不再是 Flask 默认识别的 app.py，所以在启动开发服务器前需要使用环境变量 `FLASK_APP` 来给出程序实例所在的模块路径。因为程序实例在包构造文件内，所以直接写出包名称即可。在 `.flaskenv` 文件中添加下面这行代码：
+
+```
+FLASK_APP=watchlist
+```
+
+最终的项目文件结构如下所示：
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> tree /F
+卷 作业 的文件夹 PATH 列表
+卷序列号为 2D97-AD94
+E:.
+│  .flaskenv
+│  .gitignore
+│  app.py  # 之前的单文件程序
+│  test_watchlist.py
+│
+├─test_demo
+│      module_foo.py
+│      test_sayhello.py
+│
+└─watchlist  # 程序包
+   │  commands.py
+   │  errors.py
+   │  models.py
+   │  views.py
+   │  __init__.py
+   │
+   ├─static
+   │  │  favicon.ico
+   │  │  style.css
+   │  │
+   │  └─images
+   │          avatar.png
+   │          totoro.gif
+   │
+   └─templates
+      │  base.html
+      │  edit.html
+      │  index.html
+      │  login.html
+      │  settings.html
+      │
+      └─errors
+              404.html
+
+```
+
+### 本章小结
+
+对这个程序来说，这样的项目结构已经足够了。但对于大型项目，可以使用蓝本和工厂函数来进一步组织程序。
+
+提交代码：
+
+```powershell
+$ git add .
+$ git commit -m "Organize application with package"
+$ git push
+```
+
+### 进阶提示
+
+* [蓝本](https://flask.palletsprojects.com/en/1.0.x/blueprints/) 类似于子程序的概念，借助蓝本你可以把程序不同部分的代码分离开（比如按照功能划分为用户认证、管理后台等多个部分），即对程序进行模块化处理。每个蓝本可以拥有独立的子域名、URL 前缀、错误处理函数、模板和静态文件。
+* [工厂函数](https://flask.palletsprojects.com/en/1.0.x/patterns/appfactories/) 就是创建程序的函数。在工厂函数内，我们先创建程序实例，并在函数内完成初始化扩展、注册视图函数等一系列操作，最后返回可以直接运行的程序实例。工厂函数可以接受配置名称作为参数，在内部加载对应的配置文件，这样就可以实现按需创建加载不同配置的程序实例，比如在测试时调用工厂函数创建一个测试用的程序实例。
 

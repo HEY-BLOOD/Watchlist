@@ -1,5 +1,7 @@
 import unittest
-from app import app, db, User, Movie, initdb, forge
+from watchlist import app, db
+from watchlist.models import User, Movie
+from watchlist.commands import initdb, forge
 
 
 class WatchlistTestCase(unittest.TestCase):
@@ -276,7 +278,7 @@ class WatchlistTestCase(unittest.TestCase):
             name='Blood Wong',
         ), follow_redirects=True)
         data = response.get_data(as_text=True)
-        self.assertIn('Updated name.', data)
+        self.assertIn('Settings updated.', data)
         self.assertIn('Blood Wong', data)
 
         # 测试更新设置，姓名为空
@@ -286,7 +288,7 @@ class WatchlistTestCase(unittest.TestCase):
         data = response.get_data(as_text=True)
         self.assertIn('Blood Wong', data)  # 上面更新成功后的名称
         self.assertIn('Invalid input.', data)
-        self.assertNotIn('Updated name.', data)
+        self.assertNotIn('Settings updated.', data)
 
     def test_forge_command(self):
         """ 测试 forge 命令，创建虚拟数据 """

@@ -1,5 +1,5 @@
 import unittest
-from module_foo import sayhello
+from .unittest_demo import sayhello
 
 
 class SayHelloTestCase(unittest.TestCase):
