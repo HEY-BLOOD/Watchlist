@@ -3,8 +3,10 @@
 {% block content %}
 <h3>Edit item</h3>
 <form method="post">
-    Name <input type="text" name="title" autocomplete="off" required value="{{ movie.title }}">&nbsp;
-    Year <input type="text" name="year" autocomplete="off" required value="{{ movie.year }}">&nbsp;
-    <input class="btn" type="submit" name="submit" value="Update">&nbsp;
+    {{ form.hidden_tag() }}
+    {{ form.csrf_token }}
+    {{ form.title.label }}&nbsp;{{ form.title(value=movie.title) }}&nbsp;
+    {{ form.year.label }}&nbsp;{{ form.year(value=movie.year) }}&nbsp;
+    {{ form.submit_edit() }}
 </form>
 {% endblock %}

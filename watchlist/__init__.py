@@ -6,17 +6,13 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 
 WIN = sys.platform.startswith('win')
+prefix = 'sqlite:////'
 if WIN:  # Windows 环境下，三个斜杠
     prefix = 'sqlite:///'
-else:
-    prefix = 'sqlite:////'
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'dev'  # 等同于 app.secret_key = 'dev'
-
-# 把 app.root_path 添加到 os.path.dirname() 中，以便把文件定位到项目根目录
-app.config['SQLALCHEMY_DATABASE_URI'] = prefix + \
-    os.path.join(os.path.dirname(app.root_path), 'data.db')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev')
+app.config['SQLALCHEMY_DATABASE_URI'] = prefix + os.path.join(os.path.dirname(app.root_path), os.getenv('DATABASE_FILE', 'data.db'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # 关闭对模型的修改监控
 
 # 在扩展类实例化前加载配置
@@ -41,7 +37,8 @@ def inject_vars():  # 函数名可以随意修改
     from watchlist.models import User
     user = User.query.first()  # 用户对象
     if not user:
-        user.name = 'Blood H'
+        user = User()
+        user.name = 'BL00D'
     return locals()  # 需要返回字典
 
 

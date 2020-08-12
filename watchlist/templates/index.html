@@ -7,9 +7,11 @@
 <!-- 模板内容保护，在模板中可以直接使用 current_user 变量 -->
 {% if current_user.is_authenticated %}
 <form method="post">
-    Name <input type="text" name="title" autocomplete="off" required>&nbsp;
-    Year <input type="text" name="year" autocomplete="off" required>&nbsp;
-    <input class="btn" type="submit" name="submit" value="Add">&nbsp;
+    {{ form.hidden_tag() }}
+    {{ form.csrf_token }}
+    {{ form.title.label }}&nbsp;{{ form.title() }}&nbsp;
+    {{ form.year.label }}&nbsp;{{ form.year() }}&nbsp;
+    {{ form.submit_add() }}
 </form>
 {% endif %}
 

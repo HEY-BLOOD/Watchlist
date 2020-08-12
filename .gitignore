@@ -6,3 +6,4 @@ __pycache__
 *.db
 htmlcov/
 .coverage
+test_watchlist.py

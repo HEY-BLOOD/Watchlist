@@ -3,11 +3,16 @@
 {% block content %}
 <h3>Login</h3>
 <form method="post">
-    Username<br>
-    <input type="text" name="username" required><br><br>
-    Password<br>
-    <!-- 密码输入框的 type 属性使用 password，会将输入值显示为圆点 -->
-    <input type="password" name="password" required><br><br>
-    <input class="btn" type="submit" name="submit" value="Submit">
+    {{ form.hidden_tag() }}
+    {{ form.csrf_token }}
+    <p>
+        {{ form.username.label }}<br>
+        {{ form.username() }}
+    </p>
+    <p>
+        {{ form.password.label }}<br>
+        {{ form.password() }}
+    </p>
+    <p>{{ form.submit() }}</p>
 </form>
 {% endblock %}

@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<ul class="movie-list">
+    <li>
+        <h3>{{ description }}</h3>
+    </li>
+    <li class="error-gohome">
+        <a href="{{ url_for('index') }}">
+            Go Home
+        </a>
+    </li>
+</ul>
+{% endblock %}

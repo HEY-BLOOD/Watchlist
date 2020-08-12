@@ -3133,3 +3133,752 @@ $ git push
 * [蓝本](https://flask.palletsprojects.com/en/1.0.x/blueprints/) 类似于子程序的概念，借助蓝本你可以把程序不同部分的代码分离开（比如按照功能划分为用户认证、管理后台等多个部分），即对程序进行模块化处理。每个蓝本可以拥有独立的子域名、URL 前缀、错误处理函数、模板和静态文件。
 * [工厂函数](https://flask.palletsprojects.com/en/1.0.x/patterns/appfactories/) 就是创建程序的函数。在工厂函数内，我们先创建程序实例，并在函数内完成初始化扩展、注册视图函数等一系列操作，最后返回可以直接运行的程序实例。工厂函数可以接受配置名称作为参数，在内部加载对应的配置文件，这样就可以实现按需创建加载不同配置的程序实例，比如在测试时调用工厂函数创建一个测试用的程序实例。
 
+
+
+## 第 10.1 章：项目完善
+
+现在这个程序已经差不多了，但仍然有些地方需要改进，比如：
+
+* 只处理了 404 HTTP 异常，还有 400、500 等 HTPP 异常 需要处理
+* 没有创建管理员用户时，页面标题的名称不显示，还有用户名和密码的不规范，应该限制敏感字符，如空格，斜线等特殊字符。
+* 添加、编辑条目、更改设置、用户登录功能的表单均使用 HTML 代码实现，应该使用 [Flask-WTF](https://flask-wtf.readthedocs.io/en/stable/) 扩展来简化表单的处理 【自动生成表单、验证表单数据、CSRF (跨站请求伪造) 保护】
+* 使用 静态代码检查工具 [Flake8](https://flake8.pycqa.org/en/latest/) 和 代码格式化工具 [yapf](https://github.com/google/yapf) 来提高代码的质量
+
+### HTTP 错误处理
+
+之前在视图函数 `page_not_found()` 中对 `404 Page Not Found` 错误进行了处理，编写了 404 错误的模板 `404.html` ，并在产生该错误时渲染返回响应到客户端。
+
+ 通常我们会为不同的 HTTP 错误编写各自的的错误处理函数，以便返回不同的响应。 但也也可以编写一个统一的错误处理函数，这个函数会处理所有的 HTTP 错误，只需要在装饰器内传入 Exception 类即可 。
+
+下面更改原本的 `page_not_found()` 视图函数改为 `app.errorhandler()` (包括装饰器)，`errors.py` 模块中：
+
+```python
+from werkzeug.exceptions import HTTPException  # HTTP 异常类
+
+@app.errorhandler(Exception)
+def all_exception_handler(e):
+    """ 处理所有的 HTTP 错误 """
+    # 对于 HTTP 异常，返回自带的错误描述和状态码
+    # 这些异常类在 Werkzeug 中定义，均继承 HTTPException 类
+    if isinstance(e, HTTPException):
+        result = render_template(
+            'errors/error.html', description=e.description), e.code
+    else:
+        # 500 未知异常
+        result = render_template(
+            'errors/error.html', description='Sorry, internal error.'), 500
+    return result  # 返回响应和 状态码
+```
+
+首先导入 `werkzeug.exceptions` 中的 `HTTPException` 异常类 ，然后使用 `app.errorhandler()` 装饰器注册错误处理函数，传入 HTTP 错误状态码或是特定的异常类， 这里传入了 异常基类 `Exception` 来捕捉所有的错误，因为任何错误都是 `Exception`  类的子类，接受再判断当前发生的错误实例 `e` 是否为 HTTP 错误 `HTTPException` 的实例，从而区分 HTTP 错误和未知错误的区分。（未知错误是指 500 错误）
+
+ 错误处理的小知识： 
+
+*  对于一般的程序异常（如 `NameError`），如果没有特定的异常处理函数，默认都会触发 500 错误处理函数。 
+*  开启调试模式的时候，500 错误会显示错误调试页面。 
+
+*  500 错误发生时传入错误处理函数的是真正的异常对象，不是 Werkzeug 内置的 HTTP 异常类。 
+*  开启调试模式的时候，500 错误会显示错误调试页面。 
+*  Werkzeug 内置的 HTTP 异常类的 description 和 code 属性分别返回错误描述和状态码。 
+
+因此，只需要将捕捉到的 HTTP 错误的 错误描述传入 `error.html` 错误模板渲染，并将渲染后的响应和状态码返回到客户端，下面编辑 错误模板 `error.html`：
+
+直接重命名之前的 404 错误模板 `404.html` 为 `error.html`，内容如下：
+
+```html
+{% extends 'base.html' %}
+
+{% block content %}
+<ul class="movie-list">
+    <li>
+        <h3>{{ description }}</h3>
+    </li>
+    <li class="error-gohome">
+        <a href="{{ url_for('index') }}">
+            Go Home
+        </a>
+    </li>
+</ul>
+{% endblock %}
+```
+
+`class` 属性 `"error-gohemo"` 的 css 样式：
+
+```css
+.movie-list .error-gohome{  /* HTTP 异常，返回首页 */
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+}
+```
+
+现在，每当有错误产生时都会被 `all_exception_handle()` 函数捕捉，并错误实例 `e` 的错误描述 `e.exception` 和 错误状态码 `e.code` 渲染后返回给客户端。不同的错误所产生的实例也是不同的，模板渲染的结果也不相同。
+
+这样子就只使用一个错误处理函数和一个错误模板，实现了所有异常的处理。
+
+* 最后，可以将 `error.html` 移到 templates 目录下，errors 子目录就不需要了，因为仅有一个模板。
+* 那么 `all_exception_handle()` 函数中的模板路径也要随之更改为 `'error.html'` 。
+
+下面是对 HTTP 错误 的单元测试，将 `test_404_page()` 测试函数改为 `test_exception_handler()` 函数：
+
+```python
+class WatchlistTestCase(unittest.TestCase):
+    """ watchlist 程序测试"""
+	# …………
+
+    def test_exception_handler(self):
+        """ All HTTP Exception Test Function """
+        # 测试 404 错误，访问页面不存在
+        response = self.client.get('/nothing')  # Get 方法访问 URL 路由
+        data = response.get_data(as_text=True)  # 获取 Unicode 格式的响应主体
+        # 判断是否包含预期值
+        self.assertIn('The requested URL was not found on the server.', data)
+        self.assertIn('Go Home', data)
+        self.assertEqual(response.status_code, 404)  # 判断响应状态码
+
+        # 测试 405 错误，请求方法不接受
+        response = self.client.post('/logout')
+        data = response.get_data(as_text=True)
+        self.assertIn('The method is not allowed for the requested URL.', data)
+        self.assertEqual(response.status_code, 405)  # 判断响应状态码
+
+        # 测试 400 错误，语义有误 或请求参数有误、
+        response = self.client.post('/login',
+                                    data=dict(title='admin', year='admin'),
+                                    follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertIn(
+            'The browser (or proxy) sent a request that this server could not understand.',
+            data)
+        self.assertEqual(response.status_code, 400)  # 判断响应状态码
+
+        # 测试 500 错误，通常是服务器端的源代码出现错误时出现
+        response = self.client.post('/movie/edit/1',
+                                    data=dict(title='Annie Hall', year='1977'),
+                                    follow_redirects=True)
+        data = response.get_data(as_text=True)
+        self.assertNotEqual(response.status_code, 500)  # 判断响应状态码
+```
+
+### 用户模型修复
+
+在程序的每个页面中 `<title>` 标签中的标签名 和 `<h2>` 标签中的页面标题的名称都来自于首个 User 对象的字段属性 `name` ，这就存在一个问题，当没有创建管理员用户名的时候 页面标题中的名称就就会报错，因为这时候的 User 对象根本就不存在，其属性 `name` 自然也就不存在。
+
+为了解决这一问题，不妨在没有任何用户名时将传入基模板一个保护 `name` 属性的 用户对象即可。
+
+#### 页面标题名称
+
+传入基模板的用户对象只需在上下文函数中创建即可，不需要更改用户模型
+
+`__init__.py` ：模板上下文函数
+
+```python
+@app.context_processor
+def inject_vars():  # 函数名可以随意修改
+    """模板上下文处理函数"""
+    name = None
+    from watchlist.models import User
+    user = User.query.first()  # 用户对象
+    if not user:
+        name = 'BL00D'
+    else:
+        name = user.name
+    return locals()  # 需要返回字典
+```
+
+这样当数据库中没有管理员用户时页面标题则会显示在上下文函数中已经预定义的页面标题名称。
+
+#### 用户名和密码规范
+
+用户名：大小写字母与阿拉伯数字的组合，无空格和字符
+
+密码：密码的对方与用户名规范相同
+
+models.py：在 User 用户模型类中定义用户名和密码的验证方法 `valid_username()` 和 `valid_password()`，同时在增加 `set_username()` 和 `set_name()` 方法实现用户名和页面名称的设置，User 模型更改如下：
+
+```python
+# …………
+
+class User(db.Model, UserMixin):  # 表名将会是 user（自动生成，小写处理）
+    # …………
+
+    def set_name(self, name):
+        self.name = name
+
+    def set_username(self, username):
+        self.username = username
+
+    def valid_username(self, username):
+        valid_length = 0 < len(username) and len(username) <= 20
+        ret = valid_length and username.isalnum()  # 内置函数，判断字符串是否只含字母和数字
+        return ret
+
+    def valid_password(self, password):
+        valid_length = 0 < len(password) and len(password) <= 20
+        ret = valid_length and password.isalnum()  # 判断字符串是否为字母和数字组合
+        return ret
+```
+
+**更改初始化管理员用户**
+
+`commands.py` ：`admin()` 命令函数，设置管理员
+
+```python
+# …………
+def admin(username, password):
+    """Create user."""
+    db.create_all()
+    user = User.query.first()
+    massage = 'Invalid username or password.'
+    if user is not None:
+        click.echo('Updating user...')
+    else:
+        user = User()
+        click.echo('Creating user...')
+    if user.valid_username(username) and user.valid_password(password):
+        user.set_name('BL00D')
+        user.set_username(username)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()  # 提交数据库会话
+        massage = 'The superuser definition successful.'
+    else:
+        massage = 'The superuser definition failed.'
+    click.echo(str(massage))
+```
+
+创建管理员的命令并提供页面标题名称 的输入，而是为它初始化了一个值。这样当上下文函数在获取数据库中用户的时候就 `name` 属性始终未这个 预设的值，同时也可以登录过后在 `/settings` URL 中 对 其进行修改。
+
+### Flask-WTF 实现表单
+
+Flask-WTF 是集成 WTForms，并带有 `csrf` 令牌的安全表单和全局的 `csrf `保护的功能。 每次当在建立表单所创建的类都是继承与 `flask_wtf` 中的 FlaskForm，而 FlaskForm 是继承 WTForms 中 forms。
+
+使用 WTForms 能够极大的简化表单的编写，不必为每一个表单编写 HTML 代码，WTForms 会根据 定义的表单模型来自动生成表单。每个 WTForms 模型都由一个或多个字段组成（也就是 HTML 表单中的控件），使用同一个表单模型，渲染模型中不同的字段，即可生成不同的表单。例如：电影条目 `Movie` 的添加和编辑操作就只需要定义一个表单模板即可实现。
+
+首先在环境中安装 Flask-WTF 扩展：
+
+```powershell
+pip install flask-wtf
+```
+
+**创建基础表单，form.py**
+
+```python
+class LoginForm(FlaskForm):
+    username = StringField()
+    password = PasswordField()
+    remember_me = BooleanField(label='Keep me logged in')
+```
+
+**CSRF保护**
+
+任何使用 FlaskForm 创建的表单发送请求，都会有 CSRF 的全部保护，在对应的 template 中HTML渲染表单时，可以加入 `{{ form.csrf_token }}`：
+
+```xml
+<form method="post">
+    {{ form.csrf_token }}
+</form
+```
+
+但是如果模板中没有表单，则可以使用一个隐藏的 input 标签加入 `{{ form.csrf_token }}`。
+
+```xml
+<form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+</form>
+```
+
+**验证表单**
+
+在视图处理程序中验证请求：view.py
+
+```python
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        return redirect('/success')
+    return render_template('login.html', form=form)
+```
+
+使用`validate_on_submit` 来检查是否是一个 POST 请求并且请求是否有效。
+
+**文件上传**
+
+Flask-WTF 提供 [`FileField`](https://wizardforcel.gitbooks.io/flask-extension-docs/content/api.html#flask_wtf.file.FileField) 来处理文件上传，它在表单提交后，自动从 `flask.request.files` 中抽取数据。[`FileField`](https://wizardforcel.gitbooks.io/flask-extension-docs/content/api.html#flask_wtf.file.FileField) 的 `data` 属性是一个 Werkzeug FileStorage 实例。
+
+```python
+from werkzeug import secure_filename
+from flask_wtf.file import FileField
+
+class PhotoForm(Form):
+    photo = FileField('Your photo')
+
+@app.route('/upload/', methods=('GET', 'POST'))
+def upload():
+    form = PhotoForm()
+    if form.validate_on_submit():
+        filename = secure_filename(form.photo.data.filename)
+        form.photo.data.save('uploads/' + filename)
+    else:
+        filename = None
+    return render_template('upload.html', form=form, filename=filename)
+```
+
+注意：在 HTML 表单的 enctype 设置成 multipart/form-data，如下:
+
+```xml
+<form action="/upload/" method="POST" enctype="multipart/form-data">
+    ....
+</form>
+```
+
+**验证码**
+
+Flask-WTF 通过 `RecaptchaField` 也提供对验证码的支持:
+
+```python
+from flask_wtf import Form, RecaptchaField
+from wtforms import TextField
+
+class SignupForm(Form):
+    username = TextField('Username')
+    recaptcha = RecaptchaField()
+```
+
+还需要配置一下信息：
+
+| 字段                  | 配置                                                         |
+| --------------------- | ------------------------------------------------------------ |
+| RECAPTCHA_PUBLIC_KEY  | **必须** 公钥                                                |
+| RECAPTCHA_PRIVATE_KEY | **必须** 私钥                                                |
+| RECAPTCHA_API_SERVER  | **可选** 验证码 API 服务器                                   |
+| RECAPTCHA_PARAMETERS  | **可选** 一个 JavaScript（api.js）参数的字典                 |
+| bRECAPTCHA_DATA_ATTRS | **可选** 一个数据属性项列表 https://developers.google.com/recaptcha/docs/display |
+
+**由于表单不止一个，可能很多，所以在 包文件夹 `watchlist` 中新建表单模块 `forms.py` ，用于存放所有表单的模型和自定义函数等。**
+
+#### 添加条目表单
+
+forms.py：添加条目表单模型
+
+```python
+from flask_wtf import FlaskForm
+from wtforms import StringField, SubmitField
+from wtforms.validators import DataRequired, ValidationError
+
+
+class MovieForm(FlaskForm):
+    title = StringField('Title', validators=[DataRequired()])
+    year = StringField('Year', validators=[DataRequired()])
+    submit_add = SubmitField('Add')
+    submit_edit = SubmitField('Edit')
+```
+
+这里的电影条目表单有两个按钮控件 `submit_add` 和 `submit_edit` ，作为添加条目 和 编辑条目的触发按钮，
+
+在 view.html 模块中更改 视图函数 `index()` 如下：
+
+```python
+from watchlist.forms import MovieForm
+
+# …………
+
+def only_number(numStr):
+    isNatural = True
+    for n in numStr:
+        if n not in '0123456789':
+            isNatural = False
+            break
+    return isNatural
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    form = MovieForm()
+    if request.method == 'POST':  # 验证 POST 请求
+        # 获取表单数据
+        title = request.form.get('title')  # 传入表单对应输入字段的 name 值
+        year = request.form.get('year')
+        # 验证数据
+        if not title or not year or len(year) != 4 or len(
+                title) > 60 or not only_number(year):
+            flash('Invalid input.')  # 显示错误提示
+            return redirect(url_for('index'))  # 重定向回主页
+        # 保存表单数据到数据库
+        movie = Movie(title=title, year=year)  # 创建记录
+        db.session.add(movie)  # 添加到数据库会话
+        db.session.commit()  # 提交数据库会话
+        flash('Item created.')  # 显示成功创建的提示
+        return redirect(url_for('index'))  # 重定向回主页
+    movies = Movie.query.all()
+    return render_template('index.html', movies=movies, form=form)
+```
+
+下面是模板中更改条目表单的定义：index.html
+
+```html
+<p>{{ movies|length }} Titles</p>
+
+{% if current_user.is_authenticated %}
+<form method="post">
+    {{ form.hidden_tag() }}
+    {{ form.title.label }}&nbsp;{{ form.title() }}&nbsp;
+    {{ form.year.label }}&nbsp;{{ form.year() }}&nbsp;
+    {{ form.submit_add() }}
+</form>
+{% endif %}
+```
+
+渲染结果如下：
+
+<form method="post">
+    <input id="csrf_token" name="csrf_token" type="hidden" value="IjkwMzJmODRmN2QxZmM4ZGI5MzA5NzllOWM2NGY4MTIxYWIzYTNhY2Ui.XywJWw.kPsB-GaxZS4cWcmppYslKaLr0FQ">
+    <input id="csrf_token" name="csrf_token" type="hidden" value="IjkwMzJmODRmN2QxZmM4ZGI5MzA5NzllOWM2NGY4MTIxYWIzYTNhY2Ui.XywJWw.kPsB-GaxZS4cWcmppYslKaLr0FQ">
+    <label for="title">Title</label>&nbsp;<input id="title" name="title" required type="text" value="">&nbsp;
+    <label for="year">Year</label>&nbsp;<input id="year" name="year" required type="text" value="">&nbsp;
+    <input id="submit_add" name="submit_add" type="submit" value="Add">
+</form>
+
+#### 编辑条目表单
+
+编辑条目表单直接使用 电影条目表单模型 `MovieForm` ，只需在模板中为其渲染 `submit_edit` 按钮即可。
+
+index.py：更改编辑条目视图函数定义：
+
+```python
+from watchlist.forms import MovieForm
+# …………
+
+@app.route('/movie/edit/<int:movie_id>', methods=['GET', 'POST'])
+@login_required  # 登录保护
+def edit(movie_id):
+    form = MovieForm()
+    movie = Movie.query.get_or_404(movie_id)
+    if request.method == 'POST':  # 验证 POST 请求
+        # if request.method == 'POST' and form.validate():  # 验证 POST 请求
+        title = request.form['title']
+        year = request.form['year']
+        if not title or not year or len(year) != 4 or len(
+                title) > 60 or not only_number(year):
+            flash('Invalid input.')
+            return redirect(url_for('edit', movie_id=movie_id))  # 重定向回对应的编辑页面
+        movie.title = title  # 更新标题
+        movie.year = year  # 更新年份
+        db.session.commit()  # 提交数据库会话
+        flash('Item updated.')
+        return redirect(url_for('index'))  # 重定向回主页
+    return render_template('edit.html', movie=movie, form=form)  # 传入被编辑的电影记录
+```
+
+edit.html：更改编辑条目表单的模板定义，默认显示当前条目的信息
+
+```html
+# …………
+
+{% block content %}
+<h3>Edit item</h3>
+<form method="post">
+    {{ form.hidden_tag() }}
+    {{ form.title.label }}&nbsp;{{ form.title(value=movie.title) }}&nbsp;
+    {{ form.year.label }}&nbsp;{{ form.year(value=movie.year) }}&nbsp;
+    {{ form.submit_edit() }}
+</form>
+{% endblock %}
+```
+
+渲染结果如下：
+
+<form method="post">
+    <input id="csrf_token" name="csrf_token" type="hidden" value="IjkwMzJmODRmN2QxZmM4ZGI5MzA5NzllOWM2NGY4MTIxYWIzYTNhY2Ui.XyxEwQ.XThBN6Y2HV8yqDQJB3_pXs8sV-E">
+    <input id="csrf_token" name="csrf_token" type="hidden" value="IjkwMzJmODRmN2QxZmM4ZGI5MzA5NzllOWM2NGY4MTIxYWIzYTNhY2Ui.XyxEwQ.XThBN6Y2HV8yqDQJB3_pXs8sV-E">
+    <label for="title">Title</label>&nbsp;<input id="title" name="title" required type="text" value="Annie Hall">&nbsp;
+    <label for="year">Year</label>&nbsp;<input id="year" name="year" required type="text" value="1977">&nbsp;
+    <input id="submit_edit" name="submit_edit" type="submit" value="Edit">
+</form>
+
+#### settings 页面表单
+
+新建用户对象的表单模型 `UserForm` ，因为单用户系统 所以不需要提高更新用户名和密码的功能。
+
+forms.py：用户表单模型
+
+```python
+from flask_wtf import FlaskForm
+from wtforms import StringField, SubmitField, PasswordField, BooleanField
+# …………
+
+class UserForm(FlaskForm):
+    name = StringField('Your Name', validators=[DataRequired()])
+    username = StringField('Username', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Submit')
+```
+
+settings.html：在模板中更改表单的定义
+
+```html
+<!-- 略………… -->
+
+<form method="post">
+    {{ form.hidden_tag() }}
+    <p>
+        {{ form.name.label }}&nbsp;
+        {{ form.name(value=user.name) }}
+    </p>
+    <p>{{ form.submit() }}</p>
+</form>
+```
+
+views.py：更改 `settings()` 视图函数，创建并生成表单
+
+```python
+from watchlist.forms import UserForm
+# …………
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required  # 视图保护
+def settings():
+    form = UserForm()
+    if form.validate_on_submit():  # 验证 POST 请求
+        # …………
+    return render_template('settings.html', form=form)
+```
+
+渲染结果（需登录用户）：
+
+<h3>Settings</h3>
+<form method="post">
+    <input id="csrf_token" name="csrf_token" type="hidden" value="IjNjZjY5OWViNTBmZDAwZjY2YjllYWRlOWFkYWRjN2QxOTg1OGM4MTMi.XzO1JA.0aakQF-W16JTuadJ7tMSv8Sf5ds">
+    <p>
+        <label for="name">Your Name</label>&nbsp;
+        <input id="name" name="name" required type="text" value="BL00D">
+    </p>
+    <p><input id="submit" name="submit" type="submit" value="Submit"></p>
+</form>
+
+#### login 登录页面
+
+login.html：在模板中更改表单的定义
+
+```html
+<!-- 略………… -->
+
+<h3>Login</h3>
+<form method="post">
+    {{ form.hidden_tag() }}
+    {{ form.csrf_token }}
+    <p>
+        {{ form.username.label }}<br>
+        {{ form.username() }}
+    </p>
+    <p>
+        {{ form.password.label }}<br>
+        {{ form.password() }}
+    </p>
+    <p>{{ form.submit() }}</p>
+</form>
+```
+
+利用 `UserForm` 表单模型生成用户登录页面
+
+views.py：更改 `login()` 视图函数，创建并生成表单
+
+```python
+from watchlist.forms import UserForm
+# …………
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = UserForm()
+    if request.method == 'POST':  # 验证 POST 请求
+        # …………
+    return render_template('login.html', form=form)
+```
+
+渲染结果（未登录用户时可见）：
+
+<h3>Login</h3>
+<form method="post">
+    <input id="csrf_token" name="csrf_token" type="hidden" value="Ijk2Y2U4YTQ4OTNmMjQ5MGM5M2JkMGJiY2M2ZWI1OGFkZGQ1ZGViZmYi.XzFhIA.24ROJdHXxO3-FPnGLSjGEKBGx2U">
+    <input id="csrf_token" name="csrf_token" type="hidden" value="Ijk2Y2U4YTQ4OTNmMjQ5MGM5M2JkMGJiY2M2ZWI1OGFkZGQ1ZGViZmYi.XzFhIA.24ROJdHXxO3-FPnGLSjGEKBGx2U">
+    <p>
+        <label for="username">Username</label><br>
+        <input id="username" name="username" required type="text" value="">
+    </p>
+    <p>
+        <label for="password">Password</label><br>
+        <input id="password" name="password" required type="password" value="">
+    </p>
+    <p><input id="submit" name="submit" type="submit" value="Submit"></p>
+</form>
+
+### 代码质量优化
+
+随着程序功能不断的完善，代码量也慢慢变大，为了写出优美且工整的代码，可以使用 静态代码检查工具 和 代码格式化工具 的组合来提高代码的质量。
+
+**Flake8 - 静态代码检查**
+
+> **Flake8** 是由Python官方发布的一款辅助检测Python代码是否规范的工具，相对于目前热度比较高的Pylint来说，Flake8检查规则灵活，支持集成额外插件，扩展性强。Flake8是对下面三个工具的封装：
+>
+> - PyFlakes：静态检查Python代码逻辑错误的工具。
+> - Pep8： 静态检查PEP8编码风格的工具。
+> - NedBatchelder’s McCabe script：静态分析Python代码复杂度的工具。
+>
+> 不光对以上三个工具的封装，Flake8还提供了扩展的开发接口。
+>
+> 官方文档：https://pypi.python.org/pypi/flake8/
+
+**yapf - 代码格式化工具**
+
+YAPF（Yet Another Python Formatter）是Google开源的一个用来格式化Python代码的工具，可以一键美化代码。支持2种代码规范：
+
+- PEP8
+- Google style
+
+**安装 flake8 和 yapf**
+
+打开命令行，按照下面的安装步骤：
+
+- ① 在 命令行 输入`pip3 list`，检查是否已存在需要的包
+- ② 继续输入`pip3 install flake8`，下载安装 flake8
+- ③ 继续输入`pip3 install yapf`，下载安装 yapf
+
+安装好 flake8 和 yapf 后（这里默认VS Code已经装好了Python插件），打开VS Code的 **用户设置（setting.json）**，在里面添加下面的代码：
+
+```json
+{
+    // …………
+    
+    "python.linting.flake8Enabled": true,
+    "python.formatting.provider": "yapf",
+    "python.linting.flake8Args": ["--max-line-length=248"], # 设置单行最长字符限制
+    "python.linting.pylintEnabled": false # 关闭pylint工具
+}
+```
+
+**为什么需要设置单行最长字符限制？** 
+
+在使用静态代码检查工具 flake8 来规范python代码时，当 **一行字符超过79个** 时会出现提示 
+
+flake8有个 `--max-line-length=n` 配置选项可用来 **设置单行最长字符限制** 
+
+所以要在 flake8 的参数设置中更改单行最大字符数，` "python.linting.flake8Args": [ 参数列表 ]` 
+
+**代码格式化**
+
+VS Code 格式化代码的快捷键 **Shift + Alt + F**
+
+### 本章小结
+
+完善项目后，对新的功能或操作进行单元测试，通过测试信息来修复程序中出现的错误。
+
+```powershell
+(myenv) PS E:\PyCode\watchlist> coverage.exe run --source=watchlist .\test_watchlist.py
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 3.814s
+
+OK
+(myenv) PS E:\PyCode\watchlist> coverage.exe report
+Name                    Stmts   Miss  Cover
+-------------------------------------------
+watchlist\__init__.py      29      0   100%
+watchlist\commands.py      36      0   100%
+watchlist\errors.py         8      0   100%
+watchlist\forms.py         13      0   100%
+watchlist\models.py        28      0   100%
+watchlist\views.py         85      0   100%
+-------------------------------------------
+TOTAL                     199      0   100%
+```
+
+程序没有问题就可以提交代码了：
+
+```powershell
+$ git add .
+$ git commit -m "Add HTTP errors, Page title name and Forms with Flask-WTF."
+$ git push
+```
+
+```powershell
+ (myenv) PS E:\PyCode\watchlist> pip freeze > requirements.txt
+```
+
+
+
+##  第 11 章：部署上线
+
+把程序部署到互联网上，让网络中的其他所有人都可以访问到。
+
+Web 程序通常有两种部署方式：传统部署和云部署。传统部署指的是在使用物理主机或虚拟主机上部署程序，这通常需要在一个 Linux 系统上完成所有的部署操作；云部署则是使用其他公司提供的云平台，这些平台为你设置好了底层服务，包括Web 服务器、数据库等等，只需要上传代码并进行一些简单设置即可完成部署。这一章介绍使用云平台 [PythonAnywhere](https://www.pythonanywhere.com/) 来部署程序。
+
+### 部署前的准备
+
+首先，需要生成一个依赖列表，方便在部署环境里安装。使用下面的命令把当前依赖列表写到一个requirements.txt 文件里：
+
+```powershell
+ (myenv) PS E:\PyCode\watchlist> pip freeze > requirements.txt
+```
+
+requirements.txt：
+
+```
+click==7.1.2
+Flask==1.1.2
+Flask-Login==0.5.
+Flask-SQLAlchemy==2.4.4
+Flask-WTF==0.14.3
+itsdangerous==1.1.0
+Jinja2==2.11.2
+MarkupSafe @ file:///C:/ci/markupsafe_1594405949945/work
+python-dotenv==0.14.0
+SQLAlchemy==1.3.18
+sqlparse==0.3.1
+Werkzeug==1.0.1
+WTForms==2.3.3
+```
+
+对于某些配置，生产环境下需要使用不同的值。为了让配置更加灵活，把需要在生产环境下使用的配置改为优先从环境变量中读取，如果没有读取到，则使用默认值：
+
+```python
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev')
+app.config['SQLALCHEMY_DATABASE_URI'] = prefix + os.path.join(os.path.dirname(app.root_path), os.getenv('DATABASE_FILE', 'data.db'))
+```
+
+以第一个配置变量为例， `os.getenv('SECRET_KEY', 'dev')` 表示读取系统环境变量 `SECRET_KEY` 的值，如果没有获取到，则使用 `dev` 。
+
+> 注意 
+>
+> 像密钥这种敏感信息，保存到环境变量中要比直接写在代码中更加安全。
+
+对于第二个配置变量，仅改动了最后的数据库文件名。在示例程序里，因为部署后将继续使用 SQLite，所以只需要为生产环境设置不同的数据库文件名，否则的话，可以像密钥一样设置优先从环境变量读取整个数据库 URL。
+
+在部署程序时，不会使用 Flask 内置的开发服务器运行程序，因此，对于写到 `.env` 文件的环境变量，需要手动使用 `python-dotenv` 导入。下面在项目根目录创建一个 wsgi.py 脚本，在这个脚本中加载环境变量，并导入程序实例以供部署时使用：
+
+wsgi.py：手动设置环境变量并导入程序实例
+
+```python
+import os
+from dotenv import load_dotenv
+
+
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path)
+
+from watchlist import app
+```
+
+这两个环境变量的具体定义，将在远程服务器环境创建新的 `.env` 文件写入。
+
+最后把改动提交到 Git 仓库，并推送到 GitHub 上的远程仓库：
+
+```powershell
+$ git add .
+$ git commit -m "Ready to deploy"
+$ git push
+```
+
+### 使用 PythonAnywhere 部署程序
+
+首先访问注册页面注册一个免费账户。注册时填入的用户名将作为程序域名的子域部分，以及分配给你的 Linux 用户名。比如，如果用户名为 `greyli`，最终分配的程序域名就是 http://greyli.pythonanywhere.com/ 。注册完成后会有一个简单的教程，可以跳过，也可以跟着了解一下基本用法。
+

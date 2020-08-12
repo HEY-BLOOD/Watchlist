@@ -9,7 +9,6 @@ body {
 /* 页脚 */
 footer {
     color: #888;
-    margin-top: 15px;
     text-align: center;
     padding: 10px;
 }
@@ -38,6 +37,12 @@ footer {
 
 .movie-list li:hover {
     background-color: #f8f9fa;
+}
+
+.movie-list .error-gohome{  /* HTTP 异常，返回首页 */
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
 }
 
 /* 龙猫图片 */
