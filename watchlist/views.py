@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-from typing import NamedTuple
-
 from flask.app import Flask
 from watchlist.forms import MovieForm, UserForm
 from watchlist import app, db

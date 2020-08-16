@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": "D:\\Software\\Miniconda3\\envs\\myenv\\python.exe",
+    "python.pythonPath": "D:\\Program Files\\Miniconda3\\envs\\web-dev\\python.exe",
     "python.formatting.provider": "yapf",
     "python.linting.flake8Enabled": true,
     "python.linting.flake8Args": [

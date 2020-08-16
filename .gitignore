@@ -7,3 +7,6 @@ __pycache__
 htmlcov/
 .coverage
 test_watchlist.py
+demo/
+flask-tutorial-2.0.pdf
+.vscode/
