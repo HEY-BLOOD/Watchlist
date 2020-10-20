@@ -9,7 +9,7 @@ Demo: [http://bl00d.pythonanywhere.com]( http://bl00d.pythonanywhere.com/ )
 clone:
 
 ```bash
-$ git clone https://github.com/greyli/watchlist.git
+$ git clone https://github.com/HEY-BLOOD/watchlist.git
 $ cd watchlist
 ```
 

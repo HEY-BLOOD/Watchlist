@@ -82,8 +82,7 @@ def index():
         title = request.form.get('title')  # 传入表单对应输入字段的 name 值
         year = request.form.get('year')
         # 验证数据
-        if not title or not year or len(year) != 4 or len(
-                title) > 60 or not only_number(year):
+        if not title or not year or len(year) != 4 or len(title) > 60 or not only_number(year):
             flash('Invalid input.')  # 显示错误提示
             return redirect(url_for('index'))  # 重定向回主页
         # 保存表单数据到数据库
@@ -105,8 +104,7 @@ def edit(movie_id):
         # if request.method == 'POST' and form.validate():  # 验证 POST 请求
         title = request.form['title']
         year = request.form['year']
-        if not title or not year or len(year) != 4 or len(
-                title) > 60 or not only_number(year):
+        if not title or not year or len(year) != 4 or len(title) > 60 or not only_number(year):
             flash('Invalid input.')
             return redirect(url_for('edit', movie_id=movie_id))  # 重定向回对应的编辑页面
         movie.title = title  # 更新标题
